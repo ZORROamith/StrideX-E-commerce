@@ -60,6 +60,7 @@ pipeline {
             }
         }
 
+        
         stage('DAST - OWASP ZAP') {
             steps {
                 sh '''
@@ -78,14 +79,17 @@ pipeline {
                     done
 
                     if [ "$READY" -ne 1 ]; then
-                        echo "Application did not become ready. Startup log:"
+                        echo "Application did not become ready."
                         cat app-start.log
                         exit 1
                     fi
 
+                    mkdir -p /var/lib/jenkins/zap-reports
+                    chmod 777 /var/lib/jenkins/zap-reports
+
                     set +e
                     docker run --rm --network host \
-                      -v "$WORKSPACE:/zap/wrk:rw" \
+                      -v /var/lib/jenkins/zap-reports:/zap/wrk:rw \
                       ghcr.io/zaproxy/zaproxy:stable \
                       zap-baseline.py \
                       -t http://127.0.0.1:3000 \
@@ -96,6 +100,13 @@ pipeline {
 
                     echo "OWASP ZAP exit code: $ZAP_STATUS"
 
+                    if [ -f /var/lib/jenkins/zap-reports/zap-report.html ]; then
+                        cp /var/lib/jenkins/zap-reports/zap-report.html "$WORKSPACE/zap-report.html"
+                    else
+                        echo "ZAP did not generate its HTML report."
+                        exit 1
+                    fi
+
                     if [ "$ZAP_STATUS" -eq 3 ]; then
                         echo "OWASP ZAP encountered a scan error."
                         exit 1
@@ -103,7 +114,7 @@ pipeline {
                 '''
             }
         }
-    }
+
 
     post {
         always {
